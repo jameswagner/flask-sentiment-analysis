@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM 094573088890.dkr.ecr.us-east-1.amazonaws.com/python-3.11-slim:latest
 
 WORKDIR /app
 
