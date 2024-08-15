@@ -7,6 +7,9 @@ from sentiment_analyzers.mpnet_analyzer import MPNetAnalyzer
 from sentiment_analyzers.vader_analyzer import VaderAnalyzer
 from sentiment_analyzers.textblob_analyzer import TextBlobAnalyzer
 from concurrent.futures import ThreadPoolExecutor
+from flask import Flask, request, jsonify
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 CORS(app)
@@ -15,6 +18,34 @@ analyzers = [GPTZeroShotAnalyzer(), VaderAnalyzer(), TextBlobAnalyzer(), MPNetAn
 
 # Create a ThreadPoolExecutor
 executor = ThreadPoolExecutor(max_workers=len(analyzers))
+users = {}
+@app.route('/register', methods=['POST'])
+def register():
+    username = request.json.get('username', None)
+    password = request.json.get('password', None)
+    if not username or not password:
+        return jsonify({"msg": "Missing username or password"}), 400
+    if username in users:
+        return jsonify({"msg": "Username already exists"}), 400
+    users[username] = generate_password_hash(password)
+    return jsonify({"msg": "User registered successfully"}), 201
+
+@app.route('/login', methods=['POST'])
+def login():
+    username = request.json.get('username', None)
+    password = request.json.get('password', None)
+    if not username or not password:
+        return jsonify({"msg": "Missing username or password"}), 400
+    if username not in users or not check_password_hash(users[username], password):
+        return jsonify({"msg": "Bad username or password"}), 401
+    access_token = create_access_token(identity=username)
+    return jsonify(access_token=access_token)
+
+@app.route('/protected', methods=['GET'])
+@jwt_required()
+def protected():
+    current_user = get_jwt_identity()
+    return jsonify(logged_in_as=current_user), 200
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
@@ -26,11 +57,9 @@ def analyze():
     
     #find the analyzer with the max time
     max_time = 0
-    max_time_analyzer = None
     for result in results:
         if result['time'] > max_time:
             max_time = result['time']
-            max_time_analyzer = result['analyzer']
 
     return jsonify({
         "text": text,
