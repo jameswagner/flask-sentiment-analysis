@@ -32,6 +32,17 @@ def register():
         return jsonify({"msg": "Username already exists"}), 400
     users[username] = generate_password_hash(password)
     return jsonify({"msg": "User registered successfully"}), 201
+  
+@app.route('/api/register', methods=['POST'])
+def register_api():
+    username = request.json.get('username', None)
+    password = request.json.get('password', None)
+    if not username or not password:
+        return jsonify({"msg": "Missing username or password"}), 400
+    if username in users:
+        return jsonify({"msg": "Username already exists"}), 400
+    users[username] = generate_password_hash(password)
+    return jsonify({"msg": "User registered successfully"}), 201
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -75,6 +86,17 @@ def health_check():
     return jsonify({
         'status': 'healthy'
     })
+    
+@app.route('/api/health', methods=['GET'])
+def health_check_api():
+    return jsonify({
+        'status': 'healthy'
+    })
+    
+
+
+
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
