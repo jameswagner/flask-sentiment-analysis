@@ -22,16 +22,6 @@ analyzers = [GPTZeroShotAnalyzer(), VaderAnalyzer(), TextBlobAnalyzer(), MPNetAn
 # Create a ThreadPoolExecutor
 executor = ThreadPoolExecutor(max_workers=len(analyzers))
 users = {}
-@app.route('/register', methods=['POST'])
-def register():
-    username = request.json.get('username', None)
-    password = request.json.get('password', None)
-    if not username or not password:
-        return jsonify({"msg": "Missing username or password"}), 400
-    if username in users:
-        return jsonify({"msg": "Username already exists"}), 400
-    users[username] = generate_password_hash(password)
-    return jsonify({"msg": "User registered successfully"}), 201
   
 @app.route('/api/register', methods=['POST'])
 def register_api():
@@ -44,7 +34,7 @@ def register_api():
     users[username] = generate_password_hash(password)
     return jsonify({"msg": "User registered successfully"}), 201
 
-@app.route('/login', methods=['POST'])
+@app.route('/api/login', methods=['POST'])
 def login():
     username = request.json.get('username', None)
     password = request.json.get('password', None)
@@ -55,13 +45,13 @@ def login():
     access_token = create_access_token(identity=username)
     return jsonify(access_token=access_token)
 
-@app.route('/protected', methods=['GET'])
+@app.route('/api/protected', methods=['GET'])
 @jwt_required()
 def protected():
     current_user = get_jwt_identity()
     return jsonify(logged_in_as=current_user), 200
 
-@app.route('/analyze', methods=['POST'])
+@app.route('/api/analyze', methods=['POST'])
 def analyze():
     data = request.json
     text = data.get('text', '')
@@ -80,17 +70,11 @@ def analyze():
         "results": results
     })
 
-#health check route
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({
-        'status': 'healthy'
-    })
-    
+
 @app.route('/api/health', methods=['GET'])
 def health_check_api():
     return jsonify({
-        'status': 'healthy via api'
+        'status': 'healthy'
     })
     
 if __name__ == '__main__':
