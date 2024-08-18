@@ -90,13 +90,8 @@ def health_check():
 @app.route('/api/health', methods=['GET'])
 def health_check_api():
     return jsonify({
-        'status': 'healthy'
+        'status': 'healthy via api'
     })
     
-
-
-
-
-
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
