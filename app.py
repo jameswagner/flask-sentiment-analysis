@@ -23,7 +23,7 @@ analyzers = [GPTZeroShotAnalyzer(), VaderAnalyzer(), TextBlobAnalyzer(), MPNetAn
 executor = ThreadPoolExecutor(max_workers=len(analyzers))
 users = {}
   
-@app.route('/api/register', methods=['POST'])
+@app.route('/register', methods=['POST'])
 def register_api():
     username = request.json.get('username', None)
     password = request.json.get('password', None)
@@ -34,7 +34,7 @@ def register_api():
     users[username] = generate_password_hash(password)
     return jsonify({"msg": "User registered successfully"}), 201
 
-@app.route('/api/login', methods=['POST'])
+@app.route('/login', methods=['POST'])
 def login():
     username = request.json.get('username', None)
     password = request.json.get('password', None)
@@ -45,13 +45,13 @@ def login():
     access_token = create_access_token(identity=username)
     return jsonify(access_token=access_token)
 
-@app.route('/api/protected', methods=['GET'])
+@app.route('/protected', methods=['GET'])
 @jwt_required()
 def protected():
     current_user = get_jwt_identity()
     return jsonify(logged_in_as=current_user), 200
 
-@app.route('/api/analyze', methods=['POST'])
+@app.route('/analyze', methods=['POST'])
 def analyze():
     data = request.json
     text = data.get('text', '')
@@ -70,8 +70,32 @@ def analyze():
         "results": results
     })
 
+MOCK_PAST_ANALYSES = [
+    {
+        "text": "I love this product! It's amazing and works perfectly.",
+        "results": [
+            {"analyzer": "Sentiment Analysis", "sentiment": "Positive", "score": 0.9},
+            {"analyzer": "Entity Recognition", "sentiment": "N/A", "score": 0, "entities": ["product"]}
+        ]
+    },
+    {
+        "text": "The customer service was terrible. I'm very disappointed.",
+        "results": [
+            {"analyzer": "Sentiment Analysis", "sentiment": "Negative", "score": 0.8},
+            {"analyzer": "Entity Recognition", "sentiment": "N/A", "score": 0, "entities": ["customer service"]}
+        ]
+    }
+]
 
-@app.route('/api/health', methods=['GET'])
+@app.route('/past-analyses', methods=['GET'])
+@jwt_required()
+def get_past_analyses():
+    current_user = get_jwt_identity()
+    return jsonify(MOCK_PAST_ANALYSES), 200
+
+
+
+@app.route('/health', methods=['GET'])
 def health_check_api():
     return jsonify({
         'status': 'healthy'
