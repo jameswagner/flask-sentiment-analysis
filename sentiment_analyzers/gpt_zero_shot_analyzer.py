@@ -20,7 +20,6 @@ class GPTZeroShotAnalyzer(BaseSentimentAnalyzer):
             SecretId=secret_name
       )
       self.api_key = json.loads(get_secret_value_response['SecretString'])[secret_name]
-      print(f"api key: {self.api_key}")
       self.client = OpenAI(api_key=self.api_key)
       self.model = "gpt-3.5-turbo"
       self.scoring_prompt = """Rate the sentiment of the following physician review on a scale from 0 to 10, where:
