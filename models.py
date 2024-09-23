@@ -20,6 +20,7 @@ class Analysis(Base):
   id = Column(Integer, primary_key=True, index=True)
   user_id = Column(Integer, ForeignKey("users.id"), index=True)
   guest_session_id = Column(String, index=True)
+  user_type = Column(String)
   text = Column(Text)
   created_at = Column(DateTime, default=datetime.now(UTC))
   user = relationship("User", back_populates="analyses")

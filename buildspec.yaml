@@ -6,9 +6,12 @@ phases:
       - pip3 install --upgrade awscli
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPO_URI
+      - pip3 install alembic
   build:
     commands:
       - echo Build started on `date`
+      - echo Running Alembic migrations...
+      - alembic upgrade head  # Run Alembic migrations
       - echo Building the Docker image...
       - docker build -t $ECR_REPO_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION .
       - docker tag $ECR_REPO_URI:$CODEBUILD_RESOLVED_SOURCE_VERSION $ECR_REPO_URI:latest

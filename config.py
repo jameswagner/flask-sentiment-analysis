@@ -27,7 +27,9 @@ class Config:
         self.LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
         self.COGNITO_CLIENT_ID = os.getenv('COGNITO_CLIENT_ID')
         self.COGNITO_USER_POOL_ID = os.getenv('COGNITO_USER_POOL_ID')
-
+        guest_credentials = self.get_guest_credentials()
+        self.GUEST_USERNAME = guest_credentials['username']
+        self.GUEST_PASSWORD = guest_credentials['password']
         db_credentials = self.get_db_credentials()
         self.DATABASE_URI = f"postgresql://{db_credentials['username']}:{db_credentials['password']}@{os.getenv('DB_HOST')}/{os.getenv('DB_NAME')}"
         
@@ -41,6 +43,12 @@ class Config:
             'MNLIAnalyzer',
             'TinyBERTAnalyzer'
         ]
+
+    @staticmethod
+    def get_guest_credentials():
+        client = boto3.client('secretsmanager')
+        secret = client.get_secret_value(SecretId=os.getenv('GUEST_SECRETS_ARN'))
+        return eval(secret['SecretString'])
 
     @staticmethod
     def get_db_credentials():

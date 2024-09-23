@@ -1,4 +1,6 @@
+from datetime import UTC, datetime
 import logging
+import uuid
 import boto3
 from flask import request, jsonify, current_app
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
@@ -14,13 +16,14 @@ cognito_client = boto3.client('cognito-idp')
 config = get_config()
 COGNITO_CLIENT_ID = config.COGNITO_CLIENT_ID
 COGNITO_USER_POOL_ID = config.COGNITO_USER_POOL_ID
+GUEST_USERNAME = config.GUEST_USERNAME
+GUEST_PASSWORD = config.GUEST_PASSWORD
 
 def register():
     data = request.json
     username = data['username']
     password = data['password']
 
-    # Register user with AWS Cognito
     try:
         cognito_client.sign_up(
             ClientId=COGNITO_CLIENT_ID,
@@ -39,7 +42,6 @@ def register():
         logger.error(f"Error during Cognito registration: {str(e)}")
         return jsonify({"msg": "An error occurred during registration"}), 500
 
-    # Add user to local database (without password)
     db = next(get_db())
     try:
         new_user = User(username=username, email=data['email'])
@@ -52,13 +54,7 @@ def register():
         logger.error(f"Error during local user registration: {str(e)}")
         return jsonify({"msg": "An error occurred during local user registration"}), 500
 
-
-def login():
-    data = request.json
-    username = data['username']
-    password = data['password']
-
-    # Authenticate with AWS Cognito
+def _authenticate_with_cognito(username, password):
     try:
         response = cognito_client.initiate_auth(
             ClientId=COGNITO_CLIENT_ID,
@@ -68,33 +64,66 @@ def login():
                 'PASSWORD': password,
             }
         )
-        access_token = response['AuthenticationResult']['AccessToken']
-        id_token = response['AuthenticationResult']['IdToken']
-        refresh_token = response['AuthenticationResult']['RefreshToken']
-
-        logger.info(f"User logged in: {username}")
-
-        # Retrieve the user from the local database
-        db = next(get_db())
-        user = db.query(User).filter(User.username == username).first()
-
-        if not user:
-            return jsonify({"msg": "User not found in local database"}), 404
-
-        # Issue a JWT token for the local session
-        local_access_token = create_access_token(identity=user.id)
-
-        return jsonify({
-            'local_access_token': local_access_token,
-            'cognito_access_token': access_token,
-            'id_token': id_token,
-            'refresh_token': refresh_token
-        }), 200
+        return response['AuthenticationResult']
     except cognito_client.exceptions.NotAuthorizedException:
         logger.warning(f"Failed login attempt for username: {username}")
-        return jsonify({"msg": "Bad username or password"}), 401
+        return None
     except Exception as e:
-        logger.error(f"Error during Cognito login: {str(e)}")
+        logger.error(f"Error during Cognito authentication: {str(e)}")
+        raise
+      
+def _create_login_response(auth_result, user_id=None, guest_session_id=None):
+    if guest_session_id:
+        user_data = {
+            'user_type': 'guest',
+            'guest_session_id': guest_session_id
+        }
+    else:
+        user_data = {
+            'user_type': 'registered',
+            'id': user_id
+        }
+    local_access_token = create_access_token(user_data)
+    return jsonify({
+        'local_access_token': local_access_token,
+        'cognito_access_token': auth_result['AccessToken'],
+        'id_token': auth_result['IdToken'],
+        'refresh_token': auth_result['RefreshToken'],
+        'guest_session_id': guest_session_id  # Include this for guest logins
+    }), 200
+
+def login():
+    data = request.json
+    is_guest = data.get('is_guest', False)
+
+    if is_guest:
+        username = GUEST_USERNAME
+        password = GUEST_PASSWORD
+        guest_session_id = str(uuid.uuid4())
+        print(f"Guest login username: {username}, guest_session_id: {guest_session_id}")
+    else:
+        username = data['username']
+        password = data['password']
+        guest_session_id = None
+
+    try:
+        auth_result = _authenticate_with_cognito(username, password)
+        if not auth_result:
+            return jsonify({"msg": "Bad username or password"}), 401
+
+        if not is_guest:
+            db = next(get_db())
+            user = db.query(User).filter(User.username == username).first()
+            if not user:
+                return jsonify({"msg": "User not found in local database"}), 404
+            user_id = user.id
+        else:
+            user_id = None
+
+        print(f"{'Guest' if is_guest else 'User'} logged in: {username}")
+        return _create_login_response(auth_result, user_id, guest_session_id)
+    except Exception as e:
+        logger.error(f"Error during login: {str(e)}")
         return jsonify({"msg": "An error occurred during login"}), 500
   
 def refresh_token():
@@ -132,12 +161,22 @@ def format_result(analyzer_name, **kwargs):
             result['additional_data'][key] = value
     return result
 
-@jwt_required(optional=True)
+@jwt_required()
 def analyze():
     current_user = get_jwt_identity()
+    print(f"current_user: {current_user}")
+    user_type = current_user['user_type']
+    
+    if user_type == 'guest':
+        guest_session_id = current_user['guest_session_id']
+        user_id = None
+    else:
+        user_id = current_user['id']
+        guest_session_id = None
+    
     data = request.json
     text = data['text']
-    
+
     analyzers = get_analyzer_instances()
     futures = [current_app.executor.submit(analyzer.analyze, text) for analyzer in analyzers]
     
@@ -156,10 +195,13 @@ def analyze():
     
     db = next(get_db())
     new_analysis = Analysis(
-        user_id=current_user,
-        guest_session_id=request.headers.get('Session-ID') if not current_user else None,
-        text=text
+        user_id=user_id,
+        guest_session_id=guest_session_id,
+        text=text,
+        user_type=user_type,
+        created_at=datetime.now(UTC)
     )
+    print(new_analysis)
     db.add(new_analysis)
     db.flush()
     
@@ -174,7 +216,7 @@ def analyze():
         db.add(new_result)
     
     db.commit()
-    logger.info(f"Analysis completed for user: {current_user or 'guest'}. Successful analyzers: {len(analysis_results)}, Failed analyzers: {len(errored_analyzers)}")
+    print(f"Analysis completed for {'guest' if user_type == 'guest' else 'user'}: {guest_session_id or user_id}. Successful analyzers: {len(analysis_results)}, Failed analyzers: {len(errored_analyzers)}")
     return jsonify({
         "text": text, 
         "results": analysis_results, 
@@ -182,20 +224,23 @@ def analyze():
         "errored_analyzers": errored_analyzers
     })
 
+@jwt_required()
 def get_past_analyses():
     current_user = get_jwt_identity()
-    session_id = request.headers.get('Session-ID')
+    user_type = current_user['user_type']
     
     db = next(get_db())
-    if current_user:
-        analyses = db.query(Analysis).filter(Analysis.user_id == current_user).order_by(Analysis.created_at.desc()).all()
-    elif session_id:
-        analyses = db.query(Analysis).filter(Analysis.guest_session_id == session_id).order_by(Analysis.created_at.desc()).all()
+    if user_type == 'guest':
+        guest_session_id = current_user['guest_session_id']
+        analyses = db.query(Analysis).filter(Analysis.guest_session_id == guest_session_id).order_by(Analysis.created_at.desc()).all()
     else:
-        return jsonify([]), 200
+        user_id = current_user['id']
+        analyses = db.query(Analysis).filter(Analysis.user_id == user_id).order_by(Analysis.created_at.desc()).all()
     
     results = []
     for analysis in analyses:
+        print(analysis.text)
+        print(analysis.created_at)
         analysis_results = [
             {
                 "analyzer": result.analyzer,
@@ -206,7 +251,7 @@ def get_past_analyses():
         ]
         results.append({"text": analysis.text, "results": analysis_results})
     
-    logger.info(f"Past analyses retrieved for user: {current_user or 'guest'}")
+    logger.info(f"Past analyses retrieved for {'guest' if user_type == 'guest' else 'user'}: {guest_session_id if user_type == 'guest' else user_id}")
     return jsonify(results), 200
 
 def health_check():
@@ -215,6 +260,6 @@ def health_check():
 def register_routes(app):
     app.route('/register', methods=['POST'])(register)
     app.route('/login', methods=['POST'])(login)
-    app.route('/analyze', methods=['POST'])(jwt_required(optional=True)(analyze))
-    app.route('/past-analyses', methods=['GET'])(jwt_required(optional=True)(get_past_analyses))
+    app.route('/analyze', methods=['POST'])(jwt_required()(analyze))
+    app.route('/past-analyses', methods=['GET'])(jwt_required()(get_past_analyses))
     app.route('/health', methods=['GET'])(health_check)

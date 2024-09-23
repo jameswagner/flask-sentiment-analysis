@@ -37,11 +37,6 @@ def create_app():
 
     app.executor = ThreadPoolExecutor(max_workers=app.config['MAX_WORKERS'])
 
-    #@app.teardown_appcontext
-    #def shutdown_executor(exception=None):
-    #    logging.info("Shutting down executor")
-     #   app.executor.shutdown()
-
     return app
 
 if __name__ == '__main__':
