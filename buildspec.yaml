@@ -7,6 +7,7 @@ phases:
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPO_URI
       - pip3 install alembic
+      - pip3 install dotenv
   build:
     commands:
       - echo Build started on `date`
